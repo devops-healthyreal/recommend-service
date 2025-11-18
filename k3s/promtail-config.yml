@@ -13,10 +13,11 @@ data:
       filename: /tmp/positions.yaml
     
     clients:
-      - url: http://loki:3100/loki/api/v1/push  # Loki 서버 주소
+      # - url: http://loki:3100/loki/api/v1/push  # Loki 서버 주소
+      - url: http://loki.default.svc.cluster.local:3100/loki/api/v1/push
     
     scrape_configs:
-      - job_name: recommend-service
+      - job_name: recommend-logs
         static_configs:
           - targets:
               - localhost
