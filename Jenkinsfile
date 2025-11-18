@@ -8,12 +8,17 @@ pipeline {
         
         // 이미지 설정
         IMAGE_NAME = 'recommend-service'
-        IMAGE_REGISTRY = 'your-registry'
+        IMAGE_REGISTRY = 'helena73'
         IMAGE_TAG = "${BUILD_NUMBER}"
         
+        // 배포 서버 설정
+        DEPLOY_SERVER = '3.35.66.197'
+        DEPLOY_USER = 'ubuntu'
+        DEPLOY_PATH = '/home/ubuntu/k3s-manifests'
+        
         // SonarQube 설정
-        SONAR_HOST_URL = 'http://13.124.109.82:9000'
-        SONAR_TOKEN = credentials('sonar-token')
+        SONAR_HOST_URL = 'http://3.35.66.197:9000'
+        SONAR_TOKEN_CREDENTIAL_ID = 'sonar-token'
         
         // 프로젝트 설정
         PROJECT_NAME = 'recommend-service'
@@ -83,7 +88,7 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 script {
-                    withCredentials([string(credentialsId: "${SONAR_TOKEN}", variable: 'SONAR_TOKEN_VAR')]) {
+                    withCredentials([string(credentialsId: "${SONAR_TOKEN_CREDENTIAL_ID}", variable: 'SONAR_TOKEN_VAR')]) {
                         sh '''
                             echo "========================================"
                             echo "Running SonarQube analysis..."
@@ -115,7 +120,7 @@ pipeline {
         stage('Quality Gate Check') {
             steps {
                 script {
-                    withCredentials([string(credentialsId: "${SONAR_TOKEN}", variable: 'SONAR_TOKEN_VAR')]) {
+                    withCredentials([string(credentialsId: "${SONAR_TOKEN_CREDENTIAL_ID}", variable: 'SONAR_TOKEN_VAR')]) {
                         sh '''
                             echo "========================================"
                             echo "Checking SonarQube Quality Gate..."
@@ -209,17 +214,28 @@ pipeline {
                                 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
                                 kubectl config use-context ${K3S_CONTEXT}
                                 
-                                cd /home/ubuntu/k8s-manifests/${PROJECT_NAME}
+                                # 배포 디렉토리로 이동
+                                cd ${DEPLOY_PATH}/${PROJECT_NAME}
                                 
-                                # 이미지 태그 업데이트
-                                sed -i 's|image:.*recommend-service.*|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|g' k3s/deployment.yml
+                                # Git에서 최신 코드 가져오기
+                                git fetch origin
+                                git checkout main
+                                git pull origin main
+                                
+                                # 이미지 태그 업데이트 (app과 exporter 컨테이너 모두)
+                                sed -i 's|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:.*|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|g' k3s/deployment.yml
                                 
                                 # Kubernetes 리소스 배포
-                                kubectl apply -f k3s/promtail-config.yml
-                                kubectl apply -f k3s/deployment.yml
-                                kubectl apply -f k3s/service.yml
+                                # promtail-config.yml (ConfigMap) 먼저 배포
+                                if [ -f k3s/promtail-config.yml ]; then
+                                    kubectl apply -f k3s/promtail-config.yml -n ${K3S_NAMESPACE}
+                                fi
+                                
+                                # deployment.yml (Deployment, Service, ConfigMap 포함) 배포
+                                kubectl apply -f k3s/deployment.yml -n ${K3S_NAMESPACE}
                                 
                                 # 배포 상태 확인
+                                echo "Waiting for deployment rollout..."
                                 kubectl rollout status deployment/${PROJECT_NAME} -n ${K3S_NAMESPACE} --timeout=300s
                                 
                                 # Pod 상태 확인
@@ -230,6 +246,10 @@ pipeline {
                                 echo "========================================"
                                 echo "Service Status:"
                                 kubectl get svc ${PROJECT_NAME} -n ${K3S_NAMESPACE}
+                                
+                                echo "========================================"
+                                echo "Deployment Status:"
+                                kubectl get deployment ${PROJECT_NAME} -n ${K3S_NAMESPACE}
                                 
                                 echo "✅ Deployment completed successfully"
                             EOF
