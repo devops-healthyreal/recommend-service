@@ -1,5 +1,5 @@
 import os
-from flask import Flask, Response
+from flask import Flask, jsonify
 from flask_restful import Api
 from flask_cors import CORS
 from api.exercise_recommendation import RecommendExercise
@@ -13,6 +13,14 @@ api = Api(app)
 
 api.add_resource(RecommendExercise, '/recommendExercise')
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Kubernetes health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'service': 'recommend-service',
+        'version': '1.0.0'
+    }), 200
 
 if __name__ == '__main__':
     # app.run(debug=True)

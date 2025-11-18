@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: promtail-config
+  namespace: default
+data:
+  promtail-config.yaml: |
+    server:
+      http_listen_port: 9080
+      grpc_listen_port: 0
+    
+    positions:
+      filename: /tmp/positions.yaml
+    
+    clients:
+      - url: http://loki:3100/loki/api/v1/push  # Loki 서버 주소
+    
+    scrape_configs:
+      - job_name: recommend-service
+        static_configs:
+          - targets:
+              - localhost
+            labels:
+              job: recommend-service
+              app: recommend-service
+              __path__: /var/log/app/*.log
+      
+      - job_name: system
+        static_configs:
+          - targets:
+              - localhost
+            labels:
+              job: system
+              __path__: /var/log/*.log

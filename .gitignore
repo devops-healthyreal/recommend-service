@@ -13,3 +13,5 @@ api/venv/
 # Environment / secret files
 .env
 secret/
+
+*.tar
