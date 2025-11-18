@@ -25,7 +25,7 @@ spec:
       containers:
       # ========== 메인 애플리케이션 ==========
       - name: app
-        image: your-registry/recommend-service:latest
+        image: helena73/recommend-service:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 5000
@@ -82,7 +82,7 @@ spec:
         - name: promtail-config
           mountPath: /etc/promtail
         - name: shared-logs
-          mountPath: /var/log/app
+          mountPath: /tmp/log/app-logs
           readOnly: true
         - name: varlog
           mountPath: /var/log
@@ -97,7 +97,7 @@ spec:
       
       # ========== Metrics Exporter (메트릭 수집) ==========
       - name: exporter
-        image: your-registry/recommend-service:latest
+        image: helena73/recommend-service:latest
         command: ["python", "/app/exporter.py"]
         ports:
         - containerPort: 9090

@@ -23,7 +23,7 @@ data:
             labels:
               job: recommend-service
               app: recommend-service
-              __path__: /var/log/app/*.log
+              __path__: /tmp/log/app/*.log
       
       - job_name: system
         static_configs:
