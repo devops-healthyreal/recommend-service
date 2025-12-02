@@ -19,8 +19,8 @@ pipeline {
         
         // SonarCloud 설정 (SonarQube 대신 SonarCloud 사용)
         SONAR_TOKEN_CREDENTIAL_ID = 'sonarcloud-token'  // SonarCloud 토큰
-        SONAR_ORGANIZATION = 'your-organization'  // SonarCloud 조직명
-        SONAR_PROJECT_KEY = 'your-org_recommend-service'  // SonarCloud 프로젝트 키
+        SONAR_ORGANIZATION = 'devops-healthyreal'  // SonarCloud 조직명
+        SONAR_PROJECT_KEY = 'devops-healthyreal_recommend-service'  // SonarCloud 프로젝트 키
         
         // 프로젝트 설정
         PROJECT_NAME = 'recommend-service'
