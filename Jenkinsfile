@@ -25,6 +25,8 @@ pipeline {
         // GitHub Token for auto PR
         GITHUB_TOKEN_CREDENTIAL_ID = 'github-token'
         REPO = "devops-healthyreal/recommend-service"
+
+        BRANCH_NAME = sh(returnStdout: true, script: "git rev-parse --abbrev-ref HEAD").trim()
     }
 
     triggers {
