@@ -140,40 +140,47 @@ pipeline {
             }
         }
 
-        // 6. [Main 브랜치] 배포 (Production)
         stage('Deploy to Production') {
             when { branch 'main' }
             steps {
-                sshagent(credentials: ['admin']) {
-                    sh """
-                        echo "Deploying to PRODUCTION server..."
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_SERVER} << EOF
-                            set -e
-                            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+                withCredentials([usernamePassword(credentialsId: GITHUB_TOKEN_CREDENTIAL_ID, usernameVariable: 'GIT_USER', passwordVariable: 'GITHUB_TOKEN')]) {
+                    sshagent(credentials: ['admin']) {                         
+                        sh """
+                            echo "Deploying to PRODUCTION server..."
                             
-                            # 폴더가 없으면 Clone, 있으면 Pull
-                            if [ ! -d "${DEPLOY_PATH}/${IMAGE_NAME}/.git" ]; then
-                                echo "Cloning repository..."
-                                rm -rf ${DEPLOY_PATH}/${IMAGE_NAME} # 혹시 빈 폴더가 있을까봐 삭제
-                                git clone https://github.com/${REPO}.git ${DEPLOY_PATH}/${IMAGE_NAME}
+                            # 젠킨스가 ${GITHUB_TOKEN}을 실제 값으로 바꾼 뒤에 SSH로 전송합니다.
+                            ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_SERVER} << EOF
+                                set -e
+                                export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+                                
+                                # 1. 기존 폴더가 있다면 삭제 (Clean Clone)
+                                if [ -d "${DEPLOY_PATH}/${IMAGE_NAME}" ]; then
+                                    echo "Cleaning up existing directory..."
+                                    rm -rf ${DEPLOY_PATH}/${IMAGE_NAME}
+                                fi
+                                
+                                mkdir -p ${DEPLOY_PATH}/${IMAGE_NAME}
                                 cd ${DEPLOY_PATH}/${IMAGE_NAME}
-                            else
-                                echo "Pulling latest changes..."
-                                cd ${DEPLOY_PATH}/${IMAGE_NAME}
-                                git reset --hard  # 로컬 변경사항 무시
-                                git fetch origin
-                                git checkout main
+                                
+                                # 2. git 초기화
+                                git init                                
+                               
+                                git remote add origin https://git:${GITHUB_TOKEN}@github.com/${REPO}.git
+                                
+                                # 4. 코드 당겨오기 (메인 브랜치)
                                 git pull origin main
-                            fi
-                            
-                            # 이미지 태그 교체
-                            sed -i 's|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:.*|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|g' k3s/deployment.yml
-                            
-                            # 배포
-                            kubectl apply -f k3s/deployment.yml -n ${K3S_NAMESPACE_PROD}
-                            kubectl rollout status deployment/${IMAGE_NAME} -n ${K3S_NAMESPACE_PROD} --timeout=300s
-                        EOF
-                    """
+
+                                # 2. 이미지 태그 교체
+                                sed -i 's|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:.*|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|g' k3s/deployment.yml
+                                
+                                # 3. 배포 적용
+                                kubectl apply -f k3s/deployment.yml -n ${K3S_NAMESPACE_PROD}
+                                
+                                # 4. 상태 확인
+                                kubectl rollout status deployment/${IMAGE_NAME} -n ${K3S_NAMESPACE_PROD} --timeout=300s
+                            EOF
+                        """
+                    }
                 }
             }
         }
