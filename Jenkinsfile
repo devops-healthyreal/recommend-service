@@ -25,8 +25,6 @@ pipeline {
         // GitHub Token for auto PR
         GITHUB_TOKEN_CREDENTIAL_ID = 'github-token'
         REPO = "devops-healthyreal/recommend-service"
-
-        BRANCH_NAME = sh(returnStdout: true, script: "git rev-parse --abbrev-ref HEAD").trim()
     }
 
     triggers {
@@ -41,6 +39,19 @@ pipeline {
             }
         }
 
+        stage('Detect Branch Name') {
+            steps {
+                script {
+                    env.BRANCH_NAME = sh(
+                        script: "git symbolic-ref --short HEAD || echo HEAD",
+                        returnStdout: true
+                    ).trim()
+
+                    echo ">>> Detected Branch: ${env.BRANCH_NAME}"
+                }
+            }
+        }
+        
         /* ----------------------------------------
            1) DEVELOP BRANCH → SONARCLOUD 분석
         ---------------------------------------- */
