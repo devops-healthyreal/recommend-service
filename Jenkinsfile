@@ -31,7 +31,6 @@ pipeline {
     }
 
     stages {
-        // 1. 코드 가져오기 & 브랜치 이름 파악
         stage('Checkout & Detect Branch') {
             steps {
                 checkout scm
@@ -47,7 +46,6 @@ pipeline {
             }
         }
 
-        // 2. [Develop 브랜치] SonarCloud 분석
         stage('SonarCloud Analysis') {
             when { branch 'develop' }
             steps {
@@ -55,12 +53,7 @@ pipeline {
                     withCredentials([string(credentialsId: SONAR_TOKEN_CREDENTIAL_ID, variable: 'SONAR_TOKEN')]) {
                         sh '''
                             echo "Running SonarCloud analysis using Docker..."
-                            
-                            # [수정] 일반 rm 명령어가 아니라, Docker를 통해 Root 권한으로 강제 삭제합니다.
-                            # (이전 빌드에서 생성된 Root 소유 파일들을 청소하기 위함)
                             docker run --rm -u 0 -v "$(pwd):/usr/src" --entrypoint /bin/sh sonarsource/sonar-scanner-cli -c "rm -rf /usr/src/.scannerwork"
-                            
-                            # 분석 실행 (Root 권한 유지)
                             docker run --rm \
                                 -u 0 \
                                 -e SONAR_TOKEN="${SONAR_TOKEN}" \
@@ -79,12 +72,10 @@ pipeline {
             }
         }
 
-        // 3. [Develop 브랜치] Quality Gate 통과 대기
         stage('Quality Gate') {
             when { branch 'develop' }
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
-                    // 분석 결과(Pass/Fail)를 기다림. 실패시 파이프라인 중단.
                     waitForQualityGate abortPipeline: true
                 }
             }
@@ -93,8 +84,6 @@ pipeline {
         stage('Create PR to Main') {
             when { branch 'develop' }
             steps {
-                // 수정됨: string -> usernamePassword 변경
-                // passwordVariable에 토큰이 들어갑니다.
                 withCredentials([usernamePassword(credentialsId: GITHUB_TOKEN_CREDENTIAL_ID, usernameVariable: 'GIT_USER', passwordVariable: 'GITHUB_TOKEN')]) {
                     sh '''
                         echo "Quality Gate Passed! Creating PR from develop to main..."
@@ -116,11 +105,6 @@ pipeline {
             }
         }
 
-        /* 여기서 main으로 push가 일어나면, 젠킨스가 (Webhook 설정을 했다면)
-           자동으로 다시 실행되면서 아래 'main' 브랜치용 Stage들이 실행됩니다.
-        */
-
-        // 5. [Main 브랜치] Docker Build & Push
         stage('Build Docker Image') {
             when { branch 'main' }
             steps {
@@ -150,26 +134,19 @@ pipeline {
                             
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_SERVER} << EOF
                                 set -e
-                                export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-                                
-                                # 1. 무조건 기존 폴더 삭제 (Clean State)
+                                export KUBECONFIG=/etc/rancher/k3s/k3s.yaml                                
+                        
                                 echo "Removing existing directory for clean clone..."
                                 rm -rf ${DEPLOY_PATH}/${IMAGE_NAME}
                                 
-                                # 2. 폴더 생성 및 이동할 필요 없이 바로 clone (대상 폴더 지정)
                                 echo "Cloning repository..."
-                                # [중요] 사용자 이름을 'git'으로 고정하여 인증 에러 방지
                                 git clone https://git:${GITHUB_TOKEN}@github.com/${REPO}.git ${DEPLOY_PATH}/${IMAGE_NAME}
                                 
                                 cd ${DEPLOY_PATH}/${IMAGE_NAME}
-
-                                # 3. 이미지 태그 교체
                                 sed -i 's|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:.*|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|g' k3s/deployment.yml
                                 
-                                # 4. 배포 적용
                                 kubectl apply -f k3s/deployment.yml -n ${K3S_NAMESPACE_PROD}
                                 
-                                # 5. 상태 확인
                                 kubectl rollout status deployment/${IMAGE_NAME} -n ${K3S_NAMESPACE_PROD} --timeout=300s
 EOF
                         """
