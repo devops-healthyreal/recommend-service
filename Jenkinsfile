@@ -159,13 +159,16 @@ pipeline {
                                     rm -rf ${DEPLOY_PATH}/${IMAGE_NAME}
                                 fi
                                 
-                                echo "Cloning repository..."
-                                
-                                # [수정] GIT_USER 제거 + 토큰만 사용
-                                # 이제 젠킨스가 이 자리에 토큰을 박아넣어서 보냅니다.
-                                git clone https://${GITHUB_TOKEN}@github.com/${REPO}.git ${DEPLOY_PATH}/${IMAGE_NAME}
-                                
+                                mkdir -p ${DEPLOY_PATH}/${IMAGE_NAME}
                                 cd ${DEPLOY_PATH}/${IMAGE_NAME}
+                                
+                                # 2. git 초기화
+                                git init                                
+                               
+                                git remote add origin https://git:${GITHUB_TOKEN}@github.com/${REPO}.git
+                                
+                                # 4. 코드 당겨오기 (메인 브랜치)
+                                git pull origin main
 
                                 # 2. 이미지 태그 교체
                                 sed -i 's|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:.*|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|g' k3s/deployment.yml
