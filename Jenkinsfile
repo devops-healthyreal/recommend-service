@@ -56,10 +56,11 @@ pipeline {
                         sh '''
                             echo "Running SonarCloud analysis using Docker..."
                             
-                            # 기존에 실패해서 남은 거대 파일들 정리 (선택 사항이지만 추천)
-                            rm -rf sonar-scanner*
+                            # 기존에 실패해서 남은 폴더 정리
+                            rm -rf .scannerwork
                             
                             docker run --rm \
+                                -u 0 \
                                 -e SONAR_TOKEN="${SONAR_TOKEN}" \
                                 -e SONAR_HOST_URL="https://sonarcloud.io" \
                                 -v "$(pwd):/usr/src" \
