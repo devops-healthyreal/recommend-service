@@ -2,29 +2,28 @@ pipeline {
     agent any
 
     environment {
-        // Kubernetes
+        // Kubernetes 설정
         K3S_NAMESPACE_DEV = 'dev'
         K3S_NAMESPACE_PROD = 'default'
         K3S_CONTEXT = 'default'
 
-        // Image
+        // 이미지 설정
         IMAGE_NAME = 'recommend-service'
         IMAGE_REGISTRY = 'helena73'
         IMAGE_TAG = "${BUILD_NUMBER}"
 
-        // Deploy server
+        // 배포 서버 설정 (팀 마스터 노드)
         DEPLOY_SERVER = '13.124.109.82'
         DEPLOY_USER = 'ubuntu'
         DEPLOY_PATH = '/home/ubuntu/k3s-manifests'
 
-        // SonarCloud
+        // SonarCloud 설정
         SONAR_TOKEN_CREDENTIAL_ID = 'sonarcloud-token'
         SONAR_ORGANIZATION = 'devops-healthyreal'
         SONAR_PROJECT_KEY = 'devops-healthyreal_recommend-service'
 
-        // GitHub Token for auto PR
+        // GitHub 설정 (자동 Merge용)
         GITHUB_TOKEN_CREDENTIAL_ID = 'github-token'
-        REPO = "devops-healthyreal/recommend-service"
     }
 
     triggers {
@@ -32,48 +31,33 @@ pipeline {
     }
 
     stages {
-
-        stage('Checkout') {
+        // 1. 코드 가져오기 & 브랜치 이름 파악
+        stage('Checkout & Detect Branch') {
             steps {
-                checkout(scm)
-            }
-        }
-
-        stage('Detect Branch Name') {
-            steps {
+                checkout scm
                 script {
-                    // 1. Jenkins가 제공하는 GIT_BRANCH 변수 확인 (예: origin/develop)
                     def rawBranch = env.GIT_BRANCH
-                    
                     if (rawBranch) {
-                        // 2. 'origin/' 같은 접두사 제거하고 순수 브랜치 이름만 추출
-                        // 예: origin/develop -> develop
-                        // 예: origin/main -> main
                         env.BRANCH_NAME = rawBranch.split('/').last()
                     } else {
-                        // 3. 만약 변수가 없으면 git 명령어로 시도 (혹시 모를 대비)
                         env.BRANCH_NAME = sh(returnStdout: true, script: 'git rev-parse --abbrev-ref HEAD').trim()
                     }
-
-                    echo ">>> Detected Branch Raw: ${rawBranch}"
-                    echo ">>> Final Branch Name: ${env.BRANCH_NAME}"
+                    echo ">>> Current Branch: ${env.BRANCH_NAME}"
                 }
             }
         }
 
-        /* ----------------------------------------
-           1) DEVELOP BRANCH → SONARCLOUD 분석
-        ---------------------------------------- */
+        // 2. [Develop 브랜치] SonarCloud 분석
         stage('SonarCloud Analysis') {
             when { branch 'develop' }
             steps {
-                script { // script 블록으로 감싸주세요
+                // ★ 핵심 수정: withSonarQubeEnv로 감싸야 Quality Gate가 인식함
+                // 'SonarCloud'는 젠킨스 시스템 설정(Manage Jenkins > System)에 등록한 이름과 같아야 합니다.
+                withSonarQubeEnv('SonarCloud') {
                     withCredentials([string(credentialsId: SONAR_TOKEN_CREDENTIAL_ID, variable: 'SONAR_TOKEN')]) {
                         sh '''
                             echo "Running SonarCloud analysis using Docker..."
                             
-                            # docker run 명령어로 스캐너 실행 (unzip 불필요)
-                            # $(pwd):/usr/src -> 현재 젠킨스 작업 폴더를 컨테이너에 연결
                             docker run --rm \
                                 -e SONAR_TOKEN="${SONAR_TOKEN}" \
                                 -e SONAR_HOST_URL="https://sonarcloud.io" \
@@ -90,66 +74,61 @@ pipeline {
             }
         }
 
-        /* ----------------------------------------
-           2) SONARCLOUD QUALITY GATE 확인
-        ---------------------------------------- */
+        // 3. [Develop 브랜치] Quality Gate 통과 대기
         stage('Quality Gate') {
             when { branch 'develop' }
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
+                    // 분석 결과(Pass/Fail)를 기다림. 실패시 파이프라인 중단.
                     waitForQualityGate abortPipeline: true
                 }
             }
         }
 
-        /* ----------------------------------------
-           3) QUALITY GATE SUCCESS → MAIN 자동 PR 생성
-        ---------------------------------------- */
-        stage('Create PR to main') {
+        // 4. [Develop 브랜치] 통과 시 Main으로 자동 Merge & Push
+        stage('Auto Merge to Main') {
             when { branch 'develop' }
             steps {
-                withCredentials([string(credentialsId: GITHUB_TOKEN_CREDENTIAL_ID, variable: 'GITHUB_TOKEN')]) {
+                withCredentials([usernamePassword(credentialsId: GITHUB_TOKEN_CREDENTIAL_ID, usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
                     sh '''
-                        echo "Creating PR from develop to main..."
+                        echo "Quality Gate Passed! Merging develop into main..."
 
-                        curl -X POST \
-                          -H "Authorization: token $GITHUB_TOKEN" \
-                          -H "Accept: application/vnd.github+json" \
-                          https://api.github.com/repos/${REPO}/pulls \
-                          -d '{
-                            "title": "Auto PR: develop → main (SonarCloud Passed)",
-                            "head": "develop",
-                            "base": "main",
-                            "body": "This PR was automatically created after SonarCloud quality gate passed."
-                          }'
+                        # Git 설정 (Merge를 위해 필요)
+                        git config user.email "jenkins@custom.com"
+                        git config user.name "Jenkins Bot"
+
+                        # 원격 브랜치 최신화
+                        git fetch origin main
+
+                        # main 브랜치로 이동 및 병합
+                        git checkout main
+                        git pull origin main
+                        git merge origin/develop
+
+                        # 인증 정보 포함해서 Push (https://토큰@주소 형식)
+                        # 주의: GitHub URL에 토큰을 넣어 권한 문제를 해결함
+                        git push https://${GIT_USER}:${GIT_TOKEN}@github.com/devops-healthyreal/recommend-service.git main
                     '''
                 }
             }
         }
 
-        /* ----------------------------------------
-           4) MAIN BRANCH → DOCKER BUILD + PUSH
-        ---------------------------------------- */
+        /* 여기서 main으로 push가 일어나면, 젠킨스가 (Webhook 설정을 했다면)
+           자동으로 다시 실행되면서 아래 'main' 브랜치용 Stage들이 실행됩니다.
+        */
+
+        // 5. [Main 브랜치] Docker Build & Push
         stage('Build Docker Image') {
             when { branch 'main' }
             steps {
                 sh '''
-                    echo "Building Docker image"
+                    echo "Building Docker image for Production"
                     docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
                     docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
                     docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_REGISTRY}/${IMAGE_NAME}:latest
                 '''
-            }
-        }
-
-        stage('Push Docker Image') {
-            when { branch 'main' }
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials',
-                                                  usernameVariable: 'DOCKER_USER',
-                                                  passwordVariable: 'DOCKER_PASS')]) {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                     sh '''
-                        echo "Pushing Docker image"
                         echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin
                         docker push ${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
                         docker push ${IMAGE_REGISTRY}/${IMAGE_NAME}:latest
@@ -158,55 +137,32 @@ pipeline {
             }
         }
 
-        /* ----------------------------------------
-           5) MAIN MERGE 이후 → DEPLOY
-        ---------------------------------------- */
-        stage('Deploy to Dev') {
-            when { branch 'main' }
-            steps {
-                script {
-                    sshagent(credentials: ['admin']) {
-                        sh """
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_SERVER} << EOF
-                            set -e
-                            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-
-                            kubectl create namespace ${K3S_NAMESPACE_DEV} --dry-run=client -o yaml | kubectl apply -f -
-
-                            cd ${DEPLOY_PATH}/${IMAGE_NAME}
-                            git pull origin main
-
-                            sed -i 's|image: .*|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|g' k3s/deployment.yml
-
-                            kubectl apply -f k3s/deployment.yml -n ${K3S_NAMESPACE_DEV}
-                            kubectl rollout status deployment/${IMAGE_NAME} -n ${K3S_NAMESPACE_DEV} --timeout=300s
-                        EOF
-                        """
-                    }
-                }
-            }
-        }
-
+        // 6. [Main 브랜치] 배포 (Production)
         stage('Deploy to Production') {
             when { branch 'main' }
             steps {
-                script {
-                    sshagent(credentials: ['admin']) {
-                        sh """
+                sshagent(credentials: ['admin']) {
+                    sh """
+                        echo "Deploying to PRODUCTION server..."
                         ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_SERVER} << EOF
                             set -e
                             export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-
-                            cd ${DEPLOY_PATH}/${IMAGE_NAME}
+                            
+                            cd ${DEPLOY_PATH}/${IMAGE_NAME} || mkdir -p ${DEPLOY_PATH}/${IMAGE_NAME} && cd ${DEPLOY_PATH}/${IMAGE_NAME}
+                            
+                            # 최신 코드 받기 (deployment.yml 갱신용)
+                            git fetch origin
+                            git checkout main
                             git pull origin main
-
-                            sed -i 's|image: .*|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|g' k3s/deployment.yml
-
+                            
+                            # 이미지 태그 교체
+                            sed -i 's|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:.*|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|g' k3s/deployment.yml
+                            
+                            # 배포
                             kubectl apply -f k3s/deployment.yml -n ${K3S_NAMESPACE_PROD}
                             kubectl rollout status deployment/${IMAGE_NAME} -n ${K3S_NAMESPACE_PROD} --timeout=300s
                         EOF
-                        """
-                    }
+                    """
                 }
             }
         }
@@ -216,7 +172,11 @@ pipeline {
         always {
             sh 'docker system prune -f || true'
         }
-        success { echo "Pipeline completed successfully!" }
-        failure { echo "Pipeline failed." }
+        success {
+            echo "Pipeline succeeded!"
+        }
+        failure {
+            echo "Pipeline failed."
+        }
     }
 }
