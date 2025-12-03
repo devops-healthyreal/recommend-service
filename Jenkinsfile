@@ -51,12 +51,13 @@ pipeline {
         stage('SonarCloud Analysis') {
             when { branch 'develop' }
             steps {
-                // ★ 핵심 수정: withSonarQubeEnv로 감싸야 Quality Gate가 인식함
-                // 'SonarCloud'는 젠킨스 시스템 설정(Manage Jenkins > System)에 등록한 이름과 같아야 합니다.
                 withSonarQubeEnv('SonarCloud') {
                     withCredentials([string(credentialsId: SONAR_TOKEN_CREDENTIAL_ID, variable: 'SONAR_TOKEN')]) {
                         sh '''
                             echo "Running SonarCloud analysis using Docker..."
+                            
+                            # 기존에 실패해서 남은 거대 파일들 정리 (선택 사항이지만 추천)
+                            rm -rf sonar-scanner*
                             
                             docker run --rm \
                                 -e SONAR_TOKEN="${SONAR_TOKEN}" \
@@ -67,7 +68,8 @@ pipeline {
                                 -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                                 -Dsonar.sources=. \
                                 -Dsonar.sourceEncoding=UTF-8 \
-                                -Dsonar.python.version=3.11
+                                -Dsonar.python.version=3.11 \
+                                -Dsonar.working.directory=/usr/src/.scannerwork 
                         '''
                     }
                 }
