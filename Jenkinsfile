@@ -67,21 +67,25 @@ pipeline {
         stage('SonarCloud Analysis') {
             when { branch 'develop' }
             steps {
-                withCredentials([string(credentialsId: SONAR_TOKEN_CREDENTIAL_ID, variable: 'SONAR_TOKEN')]) {
-                    sh '''
-                        echo "Running SonarCloud analysis"
-                        wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
-                        unzip -q sonar-scanner-cli-5.0.1.3006-linux.zip
-
-                        export PATH=$PATH:$(pwd)/sonar-scanner-5.0.1.3006-linux/bin
-
-                        sonar-scanner \
-                            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                            -Dsonar.organization=${SONAR_ORGANIZATION} \
-                            -Dsonar.sources=. \
-                            -Dsonar.host.url=https://sonarcloud.io \
-                            -Dsonar.login=$SONAR_TOKEN
-                    '''
+                script { // script 블록으로 감싸주세요
+                    withCredentials([string(credentialsId: SONAR_TOKEN_CREDENTIAL_ID, variable: 'SONAR_TOKEN')]) {
+                        sh '''
+                            echo "Running SonarCloud analysis using Docker..."
+                            
+                            # docker run 명령어로 스캐너 실행 (unzip 불필요)
+                            # $(pwd):/usr/src -> 현재 젠킨스 작업 폴더를 컨테이너에 연결
+                            docker run --rm \
+                                -e SONAR_TOKEN="${SONAR_TOKEN}" \
+                                -e SONAR_HOST_URL="https://sonarcloud.io" \
+                                -v "$(pwd):/usr/src" \
+                                sonarsource/sonar-scanner-cli \
+                                -Dsonar.organization=${SONAR_ORGANIZATION} \
+                                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                                -Dsonar.sources=. \
+                                -Dsonar.sourceEncoding=UTF-8 \
+                                -Dsonar.python.version=3.11
+                        '''
+                    }
                 }
             }
         }
