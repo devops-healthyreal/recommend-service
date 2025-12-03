@@ -163,7 +163,9 @@ pipeline {
                                 
                                 echo "Cloning repository..."
                                 # 2. 아이디와 토큰을 URL에 박아서 클론 (비밀번호 입력창 안 뜨게 함)
-                                git clone https://${GITHUB_TOKEN}@github.com/${REPO}.git ${DEPLOY_PATH}/${IMAGE_NAME}
+                                echo "GIT_USER: ${GIT_USER}"
+                                echo "GITHUB_TOKEN: ${GITHUB_TOKEN}"
+                                git clone https://${GIT_USER}:${GITHUB_TOKEN}@github.com/${REPO}.git ${DEPLOY_PATH}/${IMAGE_NAME}
                                 
                                 cd ${DEPLOY_PATH}/${IMAGE_NAME}
 
