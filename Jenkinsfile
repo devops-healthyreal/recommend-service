@@ -56,9 +56,11 @@ pipeline {
                         sh '''
                             echo "Running SonarCloud analysis using Docker..."
                             
-                            # 기존에 실패해서 남은 폴더 정리
-                            rm -rf .scannerwork
+                            # [수정] 일반 rm 명령어가 아니라, Docker를 통해 Root 권한으로 강제 삭제합니다.
+                            # (이전 빌드에서 생성된 Root 소유 파일들을 청소하기 위함)
+                            docker run --rm -u 0 -v "$(pwd):/usr/src" --entrypoint /bin/sh sonarsource/sonar-scanner-cli -c "rm -rf /usr/src/.scannerwork"
                             
+                            # 분석 실행 (Root 권한 유지)
                             docker run --rm \
                                 -u 0 \
                                 -e SONAR_TOKEN="${SONAR_TOKEN}" \
@@ -70,7 +72,7 @@ pipeline {
                                 -Dsonar.sources=. \
                                 -Dsonar.sourceEncoding=UTF-8 \
                                 -Dsonar.python.version=3.11 \
-                                -Dsonar.working.directory=/usr/src/.scannerwork 
+                                -Dsonar.working.directory=/usr/src/.scannerwork
                         '''
                     }
                 }
