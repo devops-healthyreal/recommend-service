@@ -42,16 +42,25 @@ pipeline {
         stage('Detect Branch Name') {
             steps {
                 script {
-                    env.BRANCH_NAME = sh(
-                        script: "git symbolic-ref --short HEAD || echo HEAD",
-                        returnStdout: true
-                    ).trim()
+                    // 1. Jenkins가 제공하는 GIT_BRANCH 변수 확인 (예: origin/develop)
+                    def rawBranch = env.GIT_BRANCH
+                    
+                    if (rawBranch) {
+                        // 2. 'origin/' 같은 접두사 제거하고 순수 브랜치 이름만 추출
+                        // 예: origin/develop -> develop
+                        // 예: origin/main -> main
+                        env.BRANCH_NAME = rawBranch.split('/').last()
+                    } else {
+                        // 3. 만약 변수가 없으면 git 명령어로 시도 (혹시 모를 대비)
+                        env.BRANCH_NAME = sh(returnStdout: true, script: 'git rev-parse --abbrev-ref HEAD').trim()
+                    }
 
-                    echo ">>> Detected Branch: ${env.BRANCH_NAME}"
+                    echo ">>> Detected Branch Raw: ${rawBranch}"
+                    echo ">>> Final Branch Name: ${env.BRANCH_NAME}"
                 }
             }
         }
-        
+
         /* ----------------------------------------
            1) DEVELOP BRANCH → SONARCLOUD 분석
         ---------------------------------------- */
