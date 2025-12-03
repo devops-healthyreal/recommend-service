@@ -143,9 +143,9 @@ pipeline {
         stage('Deploy to Production') {
             when { branch 'main' }
             steps {
-                // [수정 1] 깃허브 토큰을 가져옵니다.
+                // GitHub 토큰을 가져와서 환경변수로 주입합니다.
                 withCredentials([usernamePassword(credentialsId: GITHUB_TOKEN_CREDENTIAL_ID, usernameVariable: 'GIT_USER', passwordVariable: 'GITHUB_TOKEN')]) {
-                    sshagent(credentials: ['admin']) {
+                    sshagent(credentials: ['admin']) { // 마스터 서버 접속용 SSH 키
                         sh """
                             echo "Deploying to PRODUCTION server..."
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_SERVER} << EOF
@@ -157,7 +157,7 @@ pipeline {
                                     echo "Cloning repository..."
                                     rm -rf ${DEPLOY_PATH}/${IMAGE_NAME}
                                     
-                                    # [수정 2] URL에 토큰을 포함시켜서 인증 없이 다운로드 가능하게 함
+                                    # [핵심 수정] URL 앞에 토큰을 넣어서 비밀번호 없이 다운로드
                                     git clone https://${GITHUB_TOKEN}@github.com/${REPO}.git ${DEPLOY_PATH}/${IMAGE_NAME}
                                     
                                     cd ${DEPLOY_PATH}/${IMAGE_NAME}
@@ -166,18 +166,20 @@ pipeline {
                                     cd ${DEPLOY_PATH}/${IMAGE_NAME}
                                     git reset --hard
                                     
-                                    # [수정 3] Pull 할 때도 토큰 사용
+                                    # [핵심 수정] Pull 할 때도 토큰이 포함된 URL 사용
                                     git remote set-url origin https://${GITHUB_TOKEN}@github.com/${REPO}.git
                                     git fetch origin
                                     git checkout main
                                     git pull origin main
                                 fi
 
-                                # 이미지 태그 교체
+                                # 이미지 태그 교체 (최신 버전으로 변경)
                                 sed -i 's|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:.*|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|g' k3s/deployment.yml
                                 
-                                # 배포
+                                # 쿠버네티스 배포 적용
                                 kubectl apply -f k3s/deployment.yml -n ${K3S_NAMESPACE_PROD}
+                                
+                                # 배포가 완료될 때까지 대기 (최대 300초)
                                 kubectl rollout status deployment/${IMAGE_NAME} -n ${K3S_NAMESPACE_PROD} --timeout=300s
                             EOF
                         """
