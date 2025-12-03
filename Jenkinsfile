@@ -138,8 +138,8 @@ pipeline {
                     '''
                 }
             }
-        }
-
+        }     
+        
         stage('Deploy to Production') {
             when { branch 'main' }
             steps {
@@ -148,37 +148,30 @@ pipeline {
                         sh """
                             echo "Deploying to PRODUCTION server..."
                             
-                            # 젠킨스가 ${GITHUB_TOKEN}을 실제 값으로 바꾼 뒤에 SSH로 전송합니다.
                             ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_SERVER} << EOF
                                 set -e
                                 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
                                 
-                                # 1. 기존 폴더가 있다면 삭제 (Clean Clone)
-                                if [ -d "${DEPLOY_PATH}/${IMAGE_NAME}" ]; then
-                                    echo "Cleaning up existing directory..."
-                                    rm -rf ${DEPLOY_PATH}/${IMAGE_NAME}
-                                fi
+                                # 1. 무조건 기존 폴더 삭제 (Clean State)
+                                echo "Removing existing directory for clean clone..."
+                                rm -rf ${DEPLOY_PATH}/${IMAGE_NAME}
                                 
-                                mkdir -p ${DEPLOY_PATH}/${IMAGE_NAME}
+                                # 2. 폴더 생성 및 이동할 필요 없이 바로 clone (대상 폴더 지정)
+                                echo "Cloning repository..."
+                                # [중요] 사용자 이름을 'git'으로 고정하여 인증 에러 방지
+                                git clone https://git:${GITHUB_TOKEN}@github.com/${REPO}.git ${DEPLOY_PATH}/${IMAGE_NAME}
+                                
                                 cd ${DEPLOY_PATH}/${IMAGE_NAME}
-                                
-                                # 2. git 초기화
-                                git init                                
-                               
-                                git remote add origin https://git:${GITHUB_TOKEN}@github.com/${REPO}.git
-                                
-                                # 4. 코드 당겨오기 (메인 브랜치)
-                                git pull origin main
 
-                                # 2. 이미지 태그 교체
+                                # 3. 이미지 태그 교체
                                 sed -i 's|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:.*|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|g' k3s/deployment.yml
                                 
-                                # 3. 배포 적용
+                                # 4. 배포 적용
                                 kubectl apply -f k3s/deployment.yml -n ${K3S_NAMESPACE_PROD}
                                 
-                                # 4. 상태 확인
+                                # 5. 상태 확인
                                 kubectl rollout status deployment/${IMAGE_NAME} -n ${K3S_NAMESPACE_PROD} --timeout=300s
-                            EOF
+EOF
                         """
                     }
                 }
