@@ -24,6 +24,7 @@ pipeline {
 
         // GitHub 설정 (자동 Merge용)
         GITHUB_TOKEN_CREDENTIAL_ID = 'github-token'
+        REPO = 'devops-healthyreal/recommend-service'
     }
 
     triggers {
@@ -90,29 +91,29 @@ pipeline {
             }
         }
 
-        // 4. [Develop 브랜치] 통과 시 Main으로 자동 Merge & Push
-        stage('Auto Merge to Main') {
+        stage('Create PR to Main') {
             when { branch 'develop' }
             steps {
-                withCredentials([usernamePassword(credentialsId: GITHUB_TOKEN_CREDENTIAL_ID, usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
+                withCredentials([string(credentialsId: GITHUB_TOKEN_CREDENTIAL_ID, variable: 'GITHUB_TOKEN')]) {
                     sh '''
-                        echo "Quality Gate Passed! Merging develop into main..."
-
-                        # Git 설정 (Merge를 위해 필요)
-                        git config user.email "jenkins@custom.com"
-                        git config user.name "Jenkins Bot"
-
-                        # 원격 브랜치 최신화
-                        git fetch origin main
-
-                        # main 브랜치로 이동 및 병합
-                        git checkout main
-                        git pull origin main
-                        git merge origin/develop
-
-                        # 인증 정보 포함해서 Push (https://토큰@주소 형식)
-                        # 주의: GitHub URL에 토큰을 넣어 권한 문제를 해결함
-                        git push https://${GIT_USER}:${GIT_TOKEN}@github.com/devops-healthyreal/recommend-service.git main
+                        echo "Quality Gate Passed! Creating PR from develop to main..."
+                        
+                        # GitHub API를 호출하여 PR 생성
+                        # REPO 변수는 environment 블록에 정의된 값 사용 (devops-healthyreal/recommend-service)
+                        # 이미 PR이 열려있다면 GitHub가 에러 메시지를 주지만, 파이프라인은 계속 진행되도록 || true 처리 가능 (선택사항)
+                        
+                        curl -L \
+                          -X POST \
+                          -H "Accept: application/vnd.github+json" \
+                          -H "Authorization: Bearer $GITHUB_TOKEN" \
+                          -H "X-GitHub-Api-Version: 2022-11-28" \
+                          "https://api.github.com/repos/devops-healthyreal/recommend-service/pulls" \
+                          -d '{
+                                "title":"[Auto] develop -> main (SonarCloud Passed)",
+                                "body":"SonarCloud Quality Gate를 통과했습니다. main 브랜치로 배포를 준비해주세요.",
+                                "head":"develop",
+                                "base":"main"
+                              }'
                     '''
                 }
             }
