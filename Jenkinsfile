@@ -12,7 +12,6 @@ pipeline {
         IMAGE_REGISTRY = 'helena73'
         IMAGE_TAG = "${BUILD_NUMBER}"
 
-        // 배포 서버 설정 (팀 마스터 노드)
         DEPLOY_SERVER = '13.124.109.82'
         DEPLOY_USER = 'ubuntu'
         DEPLOY_PATH = '/home/ubuntu/k3s-manifests'
@@ -94,13 +93,11 @@ pipeline {
         stage('Create PR to Main') {
             when { branch 'develop' }
             steps {
-                withCredentials([string(credentialsId: GITHUB_TOKEN_CREDENTIAL_ID, variable: 'GITHUB_TOKEN')]) {
+                // 수정됨: string -> usernamePassword 변경
+                // passwordVariable에 토큰이 들어갑니다.
+                withCredentials([usernamePassword(credentialsId: GITHUB_TOKEN_CREDENTIAL_ID, usernameVariable: 'GIT_USER', passwordVariable: 'GITHUB_TOKEN')]) {
                     sh '''
                         echo "Quality Gate Passed! Creating PR from develop to main..."
-                        
-                        # GitHub API를 호출하여 PR 생성
-                        # REPO 변수는 environment 블록에 정의된 값 사용 (devops-healthyreal/recommend-service)
-                        # 이미 PR이 열려있다면 GitHub가 에러 메시지를 주지만, 파이프라인은 계속 진행되도록 || true 처리 가능 (선택사항)
                         
                         curl -L \
                           -X POST \
@@ -154,12 +151,20 @@ pipeline {
                             set -e
                             export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
                             
-                            cd ${DEPLOY_PATH}/${IMAGE_NAME} || mkdir -p ${DEPLOY_PATH}/${IMAGE_NAME} && cd ${DEPLOY_PATH}/${IMAGE_NAME}
-                            
-                            # 최신 코드 받기 (deployment.yml 갱신용)
-                            git fetch origin
-                            git checkout main
-                            git pull origin main
+                            # 폴더가 없으면 Clone, 있으면 Pull
+                            if [ ! -d "${DEPLOY_PATH}/${IMAGE_NAME}/.git" ]; then
+                                echo "Cloning repository..."
+                                rm -rf ${DEPLOY_PATH}/${IMAGE_NAME} # 혹시 빈 폴더가 있을까봐 삭제
+                                git clone https://github.com/${REPO}.git ${DEPLOY_PATH}/${IMAGE_NAME}
+                                cd ${DEPLOY_PATH}/${IMAGE_NAME}
+                            else
+                                echo "Pulling latest changes..."
+                                cd ${DEPLOY_PATH}/${IMAGE_NAME}
+                                git reset --hard  # 로컬 변경사항 무시
+                                git fetch origin
+                                git checkout main
+                                git pull origin main
+                            fi
                             
                             # 이미지 태그 교체
                             sed -i 's|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:.*|image: ${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|g' k3s/deployment.yml
