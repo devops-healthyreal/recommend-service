@@ -66,6 +66,8 @@ pipeline {
                         ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_SERVER} '
                             echo "🔄 최신 Docker 이미지 Pull..."
                             kubectl apply -f ${DEPLOY_PATH}/k3s-app.yaml
+                            kubectl rollout restart deployment recommend &&
+                            kubectl rollout status deployment recommend
                             echo "✅ 배포 완료"
                         '
                         """
