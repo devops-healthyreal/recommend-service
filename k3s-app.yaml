@@ -1,0 +1,71 @@
+# ------------------------------------------
+# 1️⃣ Flask Deployment
+# ------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recommend
+  labels:
+    app: recommend
+spec:
+  replicas: 2                           # Flask 서버 2개 (필요시 scale up 가능)
+  selector:
+    matchLabels:
+      app: recommend
+  template:
+    metadata:
+      labels:
+        app: recommend
+    spec:
+      containers:
+        - name: recommend-container
+          image: seung0208/recommend-app:latest   # ✅ Jenkins에서 push한 Docker 이미지
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 7004              # Flask 내부 포트 (Gunicorn 바인드 포트와 동일)
+          envFrom:
+            - secretRef:
+                name: recommend-secrets         # ✅ .env 파일로 만든 Secret (선택사항)
+      restartPolicy: Always
+
+# ------------------------------------------
+# 2️⃣ Flask Service
+# ------------------------------------------
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recommend-service
+  labels:
+    app: recommend-service
+spec:
+  selector:
+    app: recommend
+  type: ClusterIP
+  ports:
+    - port: 7004           # 클러스터 내부에서 접근할 포트
+      targetPort: 7004     # 컨테이너의 Flask 포트 (Gunicorn --bind)
+      protocol: TCP
+
+# ------------------------------------------
+# 3️⃣ Flask Ingress (외부 트래픽 유입)
+# ------------------------------------------
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flask-recommend-ingress
+  annotations:
+    ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  rules:
+    - host: 13.124.109.82.nip.io     # ✅ k3s 마스터 노드 IP 기반 테스트용 도메인 (또는 실제 도메인)
+      http:
+        paths:
+          - path: /ai/recommend
+            pathType: Prefix
+            backend:
+              service:
+                name: recommend-service
+                port:
+                  number: 7004
