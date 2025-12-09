@@ -44,9 +44,9 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         with:
           args: >
-            -Dsonar.projectKey=devops-healthyreal_vision-service
-            -Dsonar.organization=devops-healthyreal
-            -Dsonar.sources=.
-            -Dsonar.exclusions=**/migrations/**,**/venv/**,**/tests/**,**/*.md,**/*.yml
-            -Dsonar.python.version=3.11
+            -Dsonar.projectKey=devops-healthyreal_recommend-service \
+            -Dsonar.organization=devops-healthyreal \
+            -Dsonar.sources=. \
+            -Dsonar.exclusions=**/migrations/**,**/venv/**,**/tests/**,**/*.md,**/*.yml \
+            -Dsonar.python.version=3.11 \
             -Dsonar.host.url=https://sonarcloud.io
