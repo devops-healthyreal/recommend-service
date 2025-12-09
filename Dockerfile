@@ -24,5 +24,5 @@ COPY --from=builder /install /usr/local
 # 소스 코드 복사
 COPY . .
 
-EXPOSE 5000
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+EXPOSE 7004
+CMD ["gunicorn", "--bind", "0.0.0.0:7004", "app:app"]
