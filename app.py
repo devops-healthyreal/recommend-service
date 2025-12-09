@@ -43,10 +43,10 @@ api = Api(app)
 
 # api.add_resource(클래스, "도메인")
 
-api.add_resource(RecommendExercise, '/recommendExercise')
-api.add_resource(NutrientRecommender, "/recommendFood")
+api.add_resource(RecommendExercise, '/ai/recommend/recommendExercise')
+api.add_resource(NutrientRecommender, "/ai/recommend/recommendFood")
 
-@app.route('/health', methods=['GET'])
+@app.route('/ai/recommend/health', methods=['GET'])
 def health_check():
     """Kubernetes health check endpoint"""
     return jsonify({
