@@ -3,6 +3,8 @@ import re
 import numpy as np
 from collections import Counter
 from math import log
+
+import requests
 from flask_restful import Resource
 from flask import request
 import polars as pl
@@ -110,7 +112,19 @@ class RecommendExercise(Resource):
         result_string = ', '.join(recommended_exercises)
         print(f"[INFO] 추천 운동 목록: {recommended_exercises}")
 
-        # Spring Boot API 호출 → DB 저장
+        #Spring Boot API 호출 → DB 저장
+        db_save_result = True
+        message = ""
+        for eName in recommended_exercises:
+            result = save_recommendation(user_id, eName, None)
+            if not result.get("result"):
+                message = result.get("message")
+                db_save_result = result.get("result")
+        if not db_save_result:
+            return {"recommend_exec": recommended_exercises, "message": message}, 404
+        else:
+            return {"recommend_exec": recommended_exercises, "message": message}, 200
+
 
     def recommend(self, exercise_index, goal, level):
         # 유사도 계산
@@ -195,3 +209,16 @@ class RecommendExercise(Resource):
             return df['BodyPart'].unique().tolist()
         else:
             return [message]
+
+def save_recommendation(userId, eName, erDate):
+    try:
+        res = requests.post(f"{SPRING_REQUEST_URL}/exer/create-exec-data", json={
+            "id": userId,
+            "eName": eName,
+            "erDate": erDate,
+        }, timeout=5)
+        res.raise_for_status()
+        return {"result" : True, "message": "성공"}
+    except Exception as e:
+        print("추천 결과 저장 실패: ", e)
+        return {"result" : False, "message": str(e)}
